@@ -41,7 +41,7 @@ function defaults() {
   const a = (n, jenis, p) => ({ n, jenis, pct: p });
   return {
     v: 1, updatedAt: 0,
-    set: { nama: 'Pemilik', income: 5000000, saldoAwal: 0, dsr: .3, sr: .2, warn: .85, dd: 6, low: 500000, asetBasis: 'Nilai Buku', gold: 0, silver: 0, zakatMode: 'bulanan', haulMaal: '', jiwa: 1, berasKg: 0, fitrahDate: '', notif: false, lastNotif: '' },
+    set: { nama: 'Pemilik', income: 5000000, saldoAwal: 0, dsr: .3, sr: .2, warn: .85, dd: 6, low: 500000, asetBasis: 'Nilai Buku', autolock: 5, gold: 0, silver: 0, zakatMode: 'bulanan', haulMaal: '', jiwa: 1, berasKg: 0, fitrahDate: '', notif: false, lastNotif: '' },
     incCats: [['Gaji Pokok', 'Aktif'], ['Tunjangan & Lembur', 'Aktif'], ['Bonus & THR', 'Aktif'], ['Freelance / Usaha Sampingan', 'Aktif'], ['Dividen & Bunga', 'Pasif'], ['Pendapatan Sewa', 'Pasif'], ['Pendapatan Lainnya', 'Aktif']].map(([n, t]) => ({ n, t })),
     alloc: [a('Zakat / Sedekah / Sosial', 'Tetap', .025), a('Sewa Kost / Rumah', 'Tetap', .15), a('Listrik, Air & Internet', 'Tetap', .05), a('Cicilan / Utang', 'Tetap', .05), a('Asuransi & BPJS', 'Tetap', .03), a('Makan & Minum', 'Variabel', .225), a('Transportasi', 'Variabel', .08), a('Kesehatan & Perawatan Diri', 'Variabel', .03), a('Pulsa & Langganan', 'Variabel', .03), a('Dana Darurat', 'Tabungan', .10), a('Tabungan Target', 'Tabungan', .10), a('Investasi', 'Tabungan', .05), a('Hiburan & Gaya Hidup', 'Keinginan', .05), a('Lain-lain / Tak Terduga', 'Keinginan', .03), a('Pajak', 'Tetap', 0)],
     tx: [], targets: [{ n: 'Dana Darurat', pri: 'Tinggi', goal: 20000000, dl: '', awal: 0, mode: 'percent', pct: .10, monthly: 0 }],
@@ -50,13 +50,37 @@ function defaults() {
 }
 let S = defaults();
 function normalize(d) { const b = defaults(), o = Object.assign(b, d); o.set = Object.assign(defaults().set, d.set || {}); o.spt = Object.assign({ done: {}, ck: {} }, d.spt || {}); return o; }
-function load() {
-  try { const r = localStorage.getItem(LS); if (r) S = normalize(JSON.parse(r)); } catch (e) { console.warn(e); }
+/* ---- kunci password: enkripsi AES-GCM (PBKDF2) di browser ---- */
+let KEY = null, PW = '', SALT = '', ITER = 600000, LOCKED = false, GHC = {};
+const _e = new TextEncoder(), _d = new TextDecoder();
+const u8b = u => { let t = ''; for (let i = 0; i < u.length; i++) t += String.fromCharCode(u[i]); return btoa(t); };
+const b8u = b => Uint8Array.from(atob(b), c => c.charCodeAt(0));
+const newSalt = () => u8b(crypto.getRandomValues(new Uint8Array(16)));
+async function deriveKey(pw, saltB64, it = 600000) {
+  const base = await crypto.subtle.importKey('raw', _e.encode(pw), 'PBKDF2', false, ['deriveKey']);
+  return crypto.subtle.deriveKey({ name: 'PBKDF2', salt: b8u(saltB64), iterations: it, hash: 'SHA-256' }, base, { name: 'AES-GCM', length: 256 }, false, ['encrypt', 'decrypt']);
 }
-let saveTimer = null;
+async function encStr(str, key = KEY, salt = SALT) {
+  const iv = crypto.getRandomValues(new Uint8Array(12)), ct = new Uint8Array(await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, key, _e.encode(str)));
+  return { enc: 1, salt, it: ITER, iv: u8b(iv), ct: u8b(ct), updatedAt: S.updatedAt };
+}
+async function decPayload(p, key) { return _d.decode(await crypto.subtle.decrypt({ name: 'AES-GCM', iv: b8u(p.iv) }, key, b8u(p.ct))); }
+function isLocked() { try { const j = JSON.parse(localStorage.getItem(LS) || 'null'); return !!(j && j.enc); } catch { return false; } }
+function load() {
+  try { const r = localStorage.getItem(LS); if (r) { const j = JSON.parse(r); if (j && !j.enc) S = normalize(j); } } catch (e) { console.warn(e); }
+}
+let wchain = Promise.resolve();
+function persist() {
+  const snap = JSON.stringify(S);
+  if (!KEY) { try { localStorage.setItem(LS, snap); } catch (e) { toast('Penyimpanan browser penuh atau diblokir. Unduh cadangan sekarang.'); } return; }
+  wchain = wchain.then(async () => { try { localStorage.setItem(LS, JSON.stringify(await encStr(snap))); } catch (e) { toast('Gagal menyimpan data terenkripsi. Unduh cadangan sekarang.'); } });
+}
+function persistCfg() { const t = JSON.stringify(GHC); if (!KEY) { localStorage.setItem(LSG, t); return; } wchain = wchain.then(async () => { try { localStorage.setItem(LSG, JSON.stringify(await encStr(t))); } catch (e) { console.warn(e); } }); }
+function loadCfg() { try { const j = JSON.parse(localStorage.getItem(LSG) || 'null'); if (j && !j.enc) GHC = j; } catch { } }
+async function loadCfgEnc() { try { const j = JSON.parse(localStorage.getItem(LSG) || 'null'); if (j && j.enc) GHC = JSON.parse(await decPayload(j, KEY)); } catch (e) { console.warn(e); } }
 function save(touch = true) {
   if (touch) S.updatedAt = Date.now();
-  try { localStorage.setItem(LS, JSON.stringify(S)); } catch (e) { toast('Penyimpanan browser penuh atau diblokir. Unduh cadangan sekarang.'); }
+  persist();
   if (touch) ghSchedule();
 }
 
@@ -214,8 +238,8 @@ function amort(principal, ratePct, tenor) {
 
 /* ---- sinkron GitHub ---- */
 const gh = {
-  cfg() { try { return JSON.parse(localStorage.getItem(LSG)) || {}; } catch { return {}; } },
-  setCfg(c) { localStorage.setItem(LSG, JSON.stringify(c)); },
+  cfg() { return GHC; },
+  setCfg(c) { GHC = c; persistCfg(); },
   meta() { try { return JSON.parse(localStorage.getItem(LSM)) || {}; } catch { return {}; } },
   setMeta(m) { localStorage.setItem(LSM, JSON.stringify(m)); },
   ok() { const c = this.cfg(); return !!(c.owner && c.repo && c.token); },
@@ -229,11 +253,16 @@ const gh = {
     if (r.status === 404) return null;
     if (!r.ok) throw new Error('GitHub ' + r.status + ' ' + (await r.text()).slice(0, 120));
     const j = await r.json();
-    return { sha: j.sha, data: JSON.parse(this.b64d(j.content)) };
+    let data = JSON.parse(this.b64d(j.content));
+    if (data.enc) {
+      if (!KEY) throw new Error('Data di GitHub terenkripsi. Aktifkan PIN di Pengaturan dengan PIN yang sama dulu.');
+      try { data = JSON.parse(await decPayload(data, data.salt === SALT ? KEY : await deriveKey(PW, data.salt, data.it || 250000))); } catch { return { sha: j.sha, data: { updatedAt: 0 }, bad: true }; }
+    }
+    return { sha: j.sha, data };
   },
   async push(retry = true) {
     const c = this.cfg(); let m = this.meta();
-    const body = { message: 'Kasku: perbarui data ' + new Date().toISOString(), content: this.b64e(JSON.stringify(S)), branch: c.branch || 'main' };
+    const body = { message: 'Kasku: perbarui data ' + new Date().toISOString(), content: this.b64e(KEY ? JSON.stringify(await encStr(JSON.stringify(S))) : JSON.stringify(S)), branch: c.branch || 'main' };
     if (m.sha) body.sha = m.sha;
     const r = await fetch(this.url(), { method: 'PUT', headers: { ...this.hdr(), 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
     if ((r.status === 409 || r.status === 422) && retry) {
@@ -254,7 +283,10 @@ async function ghSync() {
   try {
     setStatus('Sinkron…');
     const rem = await gh.pull(); const m = gh.meta();
-    if (rem) {
+    if (rem && rem.bad) {
+      if (!confirm('Data di GitHub memakai PIN lain atau tidak bisa dibuka.\n\nOK = timpa dengan data perangkat ini\nBatal = jangan ubah')) return setStatus('Data GitHub tidak bisa dibuka');
+      gh.setMeta({ sha: rem.sha }); await gh.push();
+    } else if (rem) {
       const remNew = rem.data.updatedAt > S.updatedAt, localDirty = S.updatedAt > (m.syncedAt || 0);
       if (remNew) {
         if (localDirty && m.syncedAt && !confirm('Data di GitHub lebih baru, dan perangkat ini juga punya perubahan yang belum terkirim.\n\nOK = pakai data GitHub (perubahan di perangkat ini hilang)\nBatal = pakai data perangkat ini (menimpa GitHub)')) { gh.setMeta({ ...m, sha: rem.sha }); await gh.push(); }
@@ -271,7 +303,7 @@ function toast(msg) { let e = $('#toast'); if (!e) { e = document.createElement(
 
 /* ---- Excel ---- */
 function dl(blob, name) { const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = name; document.body.appendChild(a); a.click(); setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 500); }
-function exportJSON() { dl(new Blob([JSON.stringify(S, null, 1)], { type: 'application/json' }), `kasku-cadangan-${today()}.json`); toast('Cadangan JSON diunduh'); }
+async function exportJSON() { const enc = !!KEY; const txt = enc ? JSON.stringify(await encStr(JSON.stringify(S))) : JSON.stringify(S, null, 1); dl(new Blob([txt], { type: 'application/json' }), `kasku-cadangan${enc ? '-terenkripsi' : ''}-${today()}.json`); toast(enc ? 'Cadangan terenkripsi diunduh (butuh password untuk memulihkan)' : 'Cadangan JSON diunduh (tidak terenkripsi)'); }
 function exportXLSX() {
   if (typeof XLSX === 'undefined') return toast('Pustaka Excel belum termuat (butuh internet sekali). Coba lagi.');
   const wb = XLSX.utils.book_new(), add = (name, rows, w) => { const ws = XLSX.utils.aoa_to_sheet(rows); if (w) ws['!cols'] = w.map(x => ({ wch: x })); XLSX.utils.book_append_sheet(wb, ws, name); };
