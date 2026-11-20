@@ -18,3 +18,6 @@ Pengaturan & Excel → Impor dari Excel → pilih file Keuangan_Pribadi_v3.xlsx.
 
 ## Pengingat
 Tanpa server, notifikasi browser hanya muncul saat aplikasi dibuka. Untuk pengingat saat aplikasi tertutup, unduh jadwal (.ics) dan buka di HP agar masuk kalender.
+
+## Kunci PIN
+Pengaturan & Excel → Kunci PIN → buat PIN 4-8 angka (6+ lebih aman). Data di browser, cadangan JSON, dan file di GitHub ikut terenkripsi (AES-256). PIN TIDAK bisa dipulihkan. Simpan cadangan Excel/JSON. File Excel tidak terenkripsi.

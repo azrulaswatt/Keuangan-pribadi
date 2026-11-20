@@ -87,3 +87,10 @@ td input,td select{min-height:36px;border:1px solid #D9D4C4;border-radius:8px;pa
  .hb{grid-template-columns:100px 1fr 80px}
  h1{font-size:22px}
 }
+
+#lock{position:fixed;inset:0;background:var(--g);display:grid;place-items:center;z-index:100;padding:20px;overflow:auto}
+#lock .box{background:#fff;border-radius:24px;padding:28px;width:100%;max-width:380px;display:flex;flex-direction:column;gap:14px}
+#lock .lo2{width:48px;height:48px;border-radius:14px;background:var(--lime);color:var(--g);display:grid;place-items:center;font-size:22px;font-weight:800}
+#lock input{min-height:50px;border:2px solid #D9D4C4;border-radius:14px;padding:0 14px;width:100%;background:var(--inp)}
+#lock .err{color:var(--er);font-weight:600;min-height:20px;margin:0}
+[hidden]{display:none!important}
