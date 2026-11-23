@@ -172,13 +172,14 @@ function allDue() {
   S.tax.filter(x => !x.paid && x.due).forEach(x => out.push({ src: 'Pajak', t: `${x.n} ${rp(x.amt)}`, d: x.due, tab: 'pajak' }));
   S.zakat.filter(x => !x.key && !x.paid && x.due).forEach(x => out.push({ src: 'Zakat', t: `${x.n} ${rp(x.amt)}`, d: x.due, tab: 'zakat' }));
   autoZakat().forEach(x => out.push({ src: 'Zakat', t: `${x.n} ${x.amt ? rp(x.amt) : ''}`, d: x.due, tab: 'zakat' }));
+  S.bills.forEach(b => { const nd = nextBill(b); if (nd) out.push({ src: 'Tagihan', t: `${b.n} ${rp(b.amt)}`, d: nd.d, tab: '', p: 'anggaran' }); });
   const sp = nextSpt(); if (sp) out.push({ src: 'SPT', t: `Lapor SPT Tahunan OP tahun pajak ${sp.ty}`, d: sp.due, tab: 'spt', win: 60 });
   return out.map(x => ({ ...x, n: daysTo(x.d) })).sort((a, b) => a.n - b.n);
 }
-function notifs() { return allDue().filter(x => x.n <= (x.win || 30)).map(x => ({ ...x, k: x.n < 0 || x.n <= 3 ? 'e' : x.n <= 14 ? 'w' : 'i' })); }
+function notifs() { return allDue().filter(x => x.src !== 'Tagihan' && x.n <= (x.win || 30)).map(x => ({ ...x, k: x.n < 0 || x.n <= 3 ? 'e' : x.n <= 14 ? 'w' : 'i' })); }
 function notifCard() {
   const l = notifs(); if (!l.length) return '';
-  return `<section class="card" aria-label="Pengingat zakat, pajak, SPT"><div class="top"><h2>Pengingat zakat, pajak, dan SPT</h2><button class="btn o s" data-a="ics">Unduh ke kalender HP (.ics)</button></div><div style="display:flex;flex-direction:column;gap:8px;margin-top:10px">${l.slice(0, 8).map(x => `<div class="al ${x.k}" style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;align-items:center"><span><b>${x.src}:</b> ${esc(x.t)} · ${fmtD(x.d)} (${dueTxt(x.d)})</span><button class="btn o s" data-a="goto" data-p="rencana" data-t="${x.tab}">Buka</button></div>`).join('')}</div></section>`;
+  return `<section class="card" aria-label="Pengingat zakat, pajak, SPT"><div class="top"><h2>Pengingat zakat, pajak, dan SPT</h2><button class="btn o s" data-a="ics">Unduh ke kalender HP (.ics)</button></div><div style="display:flex;flex-direction:column;gap:8px;margin-top:10px">${l.slice(0, 8).map(x => `<div class="al ${x.k}" style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;align-items:center"><span><b>${x.src}:</b> ${esc(x.t)} · ${fmtD(x.d)} (${dueTxt(x.d)})</span><button class="btn o s" data-a="goto" data-p="${x.p || 'rencana'}" data-t="${x.tab}">Buka</button></div>`).join('')}</div></section>`;
 }
 A.goto = b => { P.tab.rc = b.dataset.t; if (location.hash === '#/' + b.dataset.p) render(); else location.hash = '#/' + b.dataset.p; setTimeout(render, 0); };
 function icsEsc(s) { return String(s).replace(/[\\;,]/g, m => '\\' + m).replace(/\n/g, '\\n'); }
@@ -205,3 +206,41 @@ A.notifon = async () => {
 };
 A.notifoff = () => { S.set.notif = false; save(false); render(); };
 setInterval(maybeNotify, 3600e3);
+
+/* ---------- Masa transisi: kontrak berakhir, tanpa penghasilan ---------- */
+function avgSurplus() { const v = []; for (let i = 1; i <= 3; i++) { const d = new Date(NOW.getFullYear(), NOW.getMonth() - i, 1), m = monthSum(d.getFullYear(), d.getMonth() + 1); if (m.n) v.push(m.net); } return v.length ? sum(v, x => x) / v.length : 0; }
+function transisi() {
+  const st = S.set, n = netWorth(), liquid = n.kas + (st.kontrakAset === 'kas' ? 0 : n.tab), end = st.kontrakEnd;
+  if (!end) return null;
+  const mEnd = Math.max(0, (new Date(end + 'T00:00:00') - new Date(today() + 'T00:00:00')) / (864e5 * 30.4375)), spend = +st.kontrakExpense || avgExpense(), inc = +st.kontrakIncome || 0, burn = Math.max(0, spend - inc);
+  const atEnd = Math.max(0, liquid + (daysTo(end) > 0 ? mEnd * avgSurplus() : 0)), months = burn > 0 ? atEnd / burn : Infinity, need = burn * st.dd, kurang = Math.max(0, need - atEnd);
+  const out = months === Infinity ? null : addM(end > today() ? end : today(), Math.floor(months));
+  return { end, liquid, mEnd, spend, inc, burn, atEnd, months, need, kurang, perBulan: mEnd >= 1 ? kurang / Math.floor(mEnd) : kurang, out, days: daysTo(end) };
+}
+function transisiCard() {
+  const st = S.set, t = transisi();
+  const f = (k, label, v, type = 'number', ph = '') => fld(label, 'kt_' + k, `<input id="kt_${k}" type="${type}" step="any" value="${esc(v || '')}" placeholder="${ph}" data-c="ktset" data-k="${k}">`);
+  const form = `<div class="frm" style="margin-top:10px">${f('kontrakEnd', 'Tanggal kontrak / penghasilan berakhir', st.kontrakEnd, 'date')}${f('kontrakIncome', 'Perkiraan penghasilan setelahnya per bulan (Rp)', st.kontrakIncome, 'number', '0 jika belum ada')}${f('kontrakExpense', 'Pengeluaran per bulan (kosong = rata-rata 3 bulan)', st.kontrakExpense, 'number', 'otomatis')}${fld('Uang yang dihitung', 'kt_a', `<select id="kt_a" data-c="ktset" data-k="kontrakAset">${opt([['kas+tab', 'Kas + tabungan target'], ['kas', 'Kas saja']], st.kontrakAset)}</select>`)}</div>`;
+  if (!t) return `<section class="card"><h2>Masa transisi (kontrak berakhir)</h2><p class="sub">Isi tanggal berakhirnya penghasilan untuk melihat uang Anda cukup sampai kapan.</p>${form}</section>`;
+  const c = t.months >= st.dd ? 'g' : t.months >= 3 ? 'w' : 'e', mtxt = t.months === Infinity ? 'Tidak terbatas' : t.months.toFixed(1).replace('.', ',') + ' bulan';
+  return `<section class="card"><div class="top"><div><h2>Masa transisi (kontrak berakhir)</h2><p class="sub">${t.days > 0 ? `Penghasilan berakhir ${fmtD(t.end)} (${t.days} hari lagi)` : `Penghasilan berakhir sejak ${fmtD(t.end)}`}</p></div><span class="tag ${c}">${t.months >= st.dd ? 'Aman' : t.months >= 3 ? 'Perlu disiapkan' : 'Rawan'}</span></div>
+  <div class="kpis" style="margin-top:12px"><div class="kpi"><small>Uang bertahan</small><b>${mtxt}</b><em>${t.out ? 'sampai sekitar ' + BLN[+t.out.slice(5, 7) - 1] + ' ' + t.out.slice(0, 4) : ''}</em></div><div class="kpi"><small>Uang saat penghasilan berakhir (perkiraan)</small><b>${rp(t.atEnd)}</b><em>sekarang ${rp(t.liquid)}</em></div><div class="kpi"><small>Kekurangan bulanan</small><b class="neg">${rp(t.burn)}</b><em>pengeluaran ${rp(t.spend)} − penghasilan ${rp(t.inc)}</em></div><div class="kpi"><small>Target aman ${st.dd} bulan</small><b>${rp(t.need)}</b><em>${t.kurang > 0 ? 'kurang ' + rp(t.kurang) : 'sudah tercukupi'}</em></div></div>
+  ${t.kurang > 0 && t.days > 0 ? `<p style="margin-top:10px">Agar cukup ${st.dd} bulan, sisihkan sekitar <b>${rp(t.perBulan)}</b> per bulan sampai kontrak berakhir.</p>` : ''}${form}<p class="sub">Perkiraan sederhana: uang saat berakhir = uang sekarang + rata-rata surplus 3 bulan terakhir × sisa bulan. Pesangon atau kompensasi, catat sebagai pemasukan dan angkanya ikut naik.</p></section>`;
+}
+C.ktset = el => { const k = el.dataset.k; S.set[k] = el.type === 'number' ? parseFloat(el.value) || 0 : el.value; save(); render(); };
+
+/* ---------- Tagihan rutin: bulanan, triwulan, semesteran, tahunan ---------- */
+const BSTEP = { Bulanan: 1, Triwulan: 3, Semesteran: 6, Tahunan: 12 };
+function billMonths(b) {
+  const st = BSTEP[b.freq || 'Bulanan'] || 1; if (st === 1) return [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12];
+  const m0 = ((+b.mon || 1) - 1) % 12, out = []; for (let m = m0; m < 12 + m0; m += st) out.push(m % 12 + 1); return out.sort((a, c) => a - c);
+}
+function nextBill(b) {
+  if (b.aktif === false) return null;
+  const y = NOW.getFullYear(), ms = billMonths(b), c = [];
+  for (let yy = y - 1; yy <= y + 1; yy++) for (const m of ms) c.push({ d: `${yy}-${pad(m)}-${pad(Math.min(b.day || 1, new Date(yy, m, 0).getDate()))}`, key: `${yy}-${pad(m)}` });
+  const f = c.filter(x => x.key > (b.paid || '') && daysTo(x.d) >= -45).sort((a, z) => a.d.localeCompare(z.d))[0];
+  return f ? { ...f, days: daysTo(f.d) } : null;
+}
+
+function billStartKey(b) { const ym = today().slice(0, 7), y = NOW.getFullYear(), ks = []; for (let yy = y - 2; yy <= y; yy++) for (const m of billMonths(b)) ks.push(`${yy}-${pad(m)}`); return ks.filter(k => k < ym).sort().pop() || ''; }
