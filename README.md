@@ -21,3 +21,6 @@ Tanpa server, notifikasi browser hanya muncul saat aplikasi dibuka. Untuk pengin
 
 ## Kunci PIN
 Pengaturan & Excel → Kunci PIN → buat PIN 4-8 angka (6+ lebih aman). Data di browser, cadangan JSON, dan file di GitHub ikut terenkripsi (AES-256). PIN TIDAK bisa dipulihkan. Simpan cadangan Excel/JSON. File Excel tidak terenkripsi.
+
+## Pasang di HP dan pakai offline (PWA)
+Buka situs GitHub Pages Anda di Chrome HP, lalu pilih menu ⋮ → "Pasang aplikasi" / "Tambahkan ke layar utama". Setelah dibuka sekali dengan internet, aplikasi bisa dipakai tanpa internet. Pustaka Excel kini disimpan di `js/vendor/`. Unggah seluruh folder, termasuk `icons/`, `js/vendor/`, `sw.js`, dan `manifest.webmanifest`.
