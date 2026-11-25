@@ -21,6 +21,7 @@ const TYPES = {
   'Pengeluaran': { cash: -1, be: 1, beban: 1, ref: null, cat: 'exp', how: 'Belanja/konsumsi. Kategori dari alokasi.' },
   'Setoran tabungan': { cash: -1, be: 1, ref: 'target', cat: 'exp', how: 'Kas ke tabungan. Terkait = nama target.' },
   'Penarikan tabungan': { cash: 1, be: -1, ref: 'target', cat: 'exp', how: 'Tabungan ke kas. Terkait = nama target.' },
+  'Pengeluaran dari target': { cash: 0, be: 1, ref: 'target', cat: 'exp', how: 'Belanja dibayar dari saldo target (bukan dari kas). Terkait = nama target.' },
   'Pembelian investasi': { cash: -1, be: 1, ref: 'inv', cat: 'exp', how: 'Kas ke investasi. Terkait = instrumen, isi unit.' },
   'Penjualan investasi': { cash: 1, be: 0, ref: 'inv', cat: 'any', how: 'Hasil jual. Terkait = instrumen, isi unit terjual.' },
   'Pembayaran utang': { cash: -1, be: 1, ref: 'debt', cat: 'exp', how: 'Hanya POKOK cicilan. Terkait = nama pinjaman.' },
@@ -41,11 +42,11 @@ function defaults() {
   const a = (n, jenis, p) => ({ n, jenis, pct: p });
   return {
     v: 1, updatedAt: 0,
-    set: { nama: 'Pemilik', income: 5000000, saldoAwal: 0, dsr: .3, sr: .2, warn: .85, dd: 6, low: 500000, asetBasis: 'Nilai Buku', autolock: 5, kontrakEnd: '', kontrakIncome: 0, kontrakExpense: 0, kontrakAset: 'kas+tab', gold: 0, silver: 0, zakatMode: 'bulanan', haulMaal: '', jiwa: 1, berasKg: 0, fitrahDate: '', notif: false, lastNotif: '' },
+    set: { nama: 'Pemilik', income: 5000000, saldoAwal: 0, dsr: .3, sr: .2, warn: .85, dd: 6, low: 500000, asetBasis: 'Nilai Buku', autolock: 5, kontrakEnd: '', kontrakIncome: 0, kontrakExpense: 0, kontrakAset: 'kas+tab', gold: 0, silver: 0, zakatMode: 'bulanan', zakatNisabBulan: 7640144, zakatGrossAdd: 0, haulMaal: '', jiwa: 1, berasKg: 0, fitrahDate: '', notif: false, lastNotif: '' },
     incCats: [['Gaji Pokok', 'Aktif'], ['Tunjangan & Lembur', 'Aktif'], ['Bonus & THR', 'Aktif'], ['Freelance / Usaha Sampingan', 'Aktif'], ['Dividen & Bunga', 'Pasif'], ['Pendapatan Sewa', 'Pasif'], ['Pendapatan Lainnya', 'Aktif']].map(([n, t]) => ({ n, t })),
     alloc: [a('Zakat / Sedekah / Sosial', 'Tetap', .025), a('Sewa Kost / Rumah', 'Tetap', .15), a('Listrik, Air & Internet', 'Tetap', .05), a('Cicilan / Utang', 'Tetap', .05), a('Asuransi & BPJS', 'Tetap', .03), a('Makan & Minum', 'Variabel', .225), a('Transportasi', 'Variabel', .08), a('Kesehatan & Perawatan Diri', 'Variabel', .03), a('Pulsa & Langganan', 'Variabel', .03), a('Dana Darurat', 'Tabungan', .10), a('Tabungan Target', 'Tabungan', .10), a('Investasi', 'Tabungan', .05), a('Hiburan & Gaya Hidup', 'Keinginan', .05), a('Lain-lain / Tak Terduga', 'Keinginan', .03), a('Pajak', 'Tetap', 0)],
     tx: [], targets: [{ n: 'Dana Darurat', pri: 'Tinggi', goal: 20000000, dl: '', awal: 0, mode: 'percent', pct: .10, monthly: 0 }],
-    debts: [], recv: [], inv: [], assets: [], bills: [], ins: [], tax: [], chat: [], logam: [], zakat: [], spt: { done: {}, ck: {} }
+    debts: [], recv: [], inv: [], assets: [], bills: [], ins: [], tax: [], chat: [], logam: [], slip: {}, targetsDone: [], zakat: [], spt: { done: {}, ck: {} }
   };
 }
 let S = defaults();
@@ -88,7 +89,7 @@ function save(touch = true) {
 const okTx = () => S.tx.filter(t => (t.st || 'Selesai') === 'Selesai');
 const cashEff = t => t.t === 'Penyesuaian saldo' ? +t.amt : (TYPES[t.t]?.cash || 0) * t.amt;
 const incVal = t => TYPES[t.t]?.inc ? t.amt : 0;
-const bebanVal = t => t.t === 'Pengeluaran' || t.t === 'Pembayaran bunga' ? t.amt : t.t === 'Refund' ? -t.amt : 0;
+const bebanVal = t => t.t === 'Pengeluaran' || t.t === 'Pengeluaran dari target' || t.t === 'Pembayaran bunga' ? t.amt : t.t === 'Refund' ? -t.amt : 0;
 const budVal = t => (TYPES[t.t]?.be || 0) * t.amt;
 const inRange = (t, a, b) => t.d >= a && t.d <= b;
 const sum = (arr, f) => arr.reduce((s, x) => s + f(x), 0);
@@ -102,7 +103,7 @@ function monthSum(y, m) {
 const cashAt = d => S.set.saldoAwal + sum(okTx().filter(t => t.d <= d), cashEff);
 const cashNow = () => S.set.saldoAwal + sum(okTx(), cashEff);
 const sumRef = (type, ref) => sum(okTx().filter(t => t.t === type && t.ref === ref), t => t.amt);
-const targetSaved = tg => (+tg.awal || 0) + sumRef('Setoran tabungan', tg.n) - sumRef('Penarikan tabungan', tg.n);
+const targetSaved = tg => (+tg.awal || 0) + sumRef('Setoran tabungan', tg.n) - sumRef('Penarikan tabungan', tg.n) - sumRef('Pengeluaran dari target', tg.n);
 const debtPaid = d => (+d.paidP || 0) + sumRef('Pembayaran utang', d.n);
 const debtBal = d => Math.max(0, d.principal - debtPaid(d));
 const invUnits = i => sum(okTx().filter(t => t.t === 'Pembelian investasi' && t.ref === i.n), t => +t.unit || 0) - sum(okTx().filter(t => t.t === 'Penjualan investasi' && t.ref === i.n), t => +t.unit || 0);
@@ -220,7 +221,7 @@ function cekTx(t) {
   if (+t.amt < 0 && !T.adj) return '⚠ Nominal negatif';
   if (!t.d) return '⚠ Tanggal kosong';
   if (T.ref && T.ref !== 'any' && !t.ref) return '⚠ Isi Terkait';
-  if (T.ref === 'target' && !S.targets.some(x => x.n === t.ref)) return '⚠ Target tidak ada';
+  if (T.ref === 'target' && !S.targets.some(x => x.n === t.ref) && !(S.targetsDone || []).some(x => x.n === t.ref)) return '⚠ Target tidak ada';
   if (T.ref === 'debt' && t.t !== 'Penerimaan pinjaman' && !S.debts.some(x => x.n === t.ref)) return '⚠ Utang tidak ada';
   if (T.ref === 'inv' && !String(t.ref).startsWith('logam:') && !S.inv.some(x => x.n === t.ref)) return '⚠ Instrumen tidak ada';
   if (T.ref === 'rec' && !S.recv.some(x => x.id === t.ref)) return '⚠ Piutang tidak ada';
@@ -302,7 +303,8 @@ window.addEventListener('online', () => { if (gh.ok()) ghSync(); });
 function toast(msg) { let e = $('#toast'); if (!e) { e = document.createElement('div'); e.id = 'toast'; e.setAttribute('role', 'status'); document.body.appendChild(e); } e.textContent = msg; e.className = 'show'; clearTimeout(toast.t); toast.t = setTimeout(() => e.className = '', 4500); }
 
 /* ---- Excel ---- */
-function dl(blob, name) { const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = name; document.body.appendChild(a); a.click(); setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 500); }
+function dl(blob, name) { if (/^kasku.*\.(json|xlsx)$/i.test(name)) try { localStorage.setItem('kasku.bk', today()); } catch (e) { }
+  const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = name; document.body.appendChild(a); a.click(); setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 500); }
 async function exportJSON() { const enc = !!KEY; const txt = enc ? JSON.stringify(await encStr(JSON.stringify(S))) : JSON.stringify(S, null, 1); dl(new Blob([txt], { type: 'application/json' }), `kasku-cadangan${enc ? '-terenkripsi' : ''}-${today()}.json`); toast(enc ? 'Cadangan terenkripsi diunduh (butuh password untuk memulihkan)' : 'Cadangan JSON diunduh (tidak terenkripsi)'); }
 function exportXLSX() {
   if (typeof XLSX === 'undefined') return toast('Pustaka Excel belum termuat (butuh internet sekali). Coba lagi.');
@@ -369,5 +371,5 @@ async function importXLSX(file) {
   if (!Object.keys(cnt).length) return toast('File ini tidak dikenali. Pakai file Excel Keuangan Pribadi v3 atau hasil unduhan Kasku.');
   const ringkas = Object.entries(cnt).map(([k, v]) => `${v} ${k}`).join(', ');
   if (!confirm(`Akan mengimpor: ${ringkas}.\n\nData di aplikasi ini DIGANTI dengan isi file. Lanjut? (Disarankan unduh cadangan JSON dulu.)`)) return;
-  const old = S; ['chat', 'logam', 'zakat', 'tax', 'ins', 'spt'].forEach(k => n[k] = old[k]); ['kontrakEnd', 'kontrakIncome', 'kontrakExpense', 'kontrakAset', 'autolock', 'gold', 'silver', 'zakatMode', 'haulMaal', 'jiwa', 'berasKg', 'fitrahDate', 'notif', 'lastNotif'].forEach(k => n.set[k] = old.set[k]); S = n; if (!cnt.tx) S.tx = []; save(); toast('Impor selesai: ' + ringkas); if (window.render) render();
+  const old = S; ['chat', 'slip', 'targetsDone', 'logam', 'zakat', 'tax', 'ins', 'spt'].forEach(k => n[k] = old[k]); ['zakatNisabBulan', 'zakatGrossAdd', 'kontrakEnd', 'kontrakIncome', 'kontrakExpense', 'kontrakAset', 'autolock', 'gold', 'silver', 'zakatMode', 'haulMaal', 'jiwa', 'berasKg', 'fitrahDate', 'notif', 'lastNotif'].forEach(k => n.set[k] = old.set[k]); S = n; if (!cnt.tx) S.tx = []; save(); toast('Impor selesai: ' + ringkas); if (window.render) render();
 }

@@ -51,7 +51,7 @@ V.dashboard = () => {
   return head(`Halo, ${esc(S.set.nama)}`, `Ringkasan ${BLN[P.m - 1]} ${P.y}`, periodBar()) + `
   <section class="card dark"><div style="display:flex;flex-wrap:wrap;gap:24px;align-items:flex-end;justify-content:space-between"><div><div style="color:#9FC2B3;font-weight:600">Kekayaan bersih (net worth)</div><div style="font-size:34px;font-weight:800;font-variant-numeric:tabular-nums">${rp(nw.nw)}</div></div>
   <div style="display:flex;flex-wrap:wrap;gap:24px"><div><small style="color:#9FC2B3">Saldo kas</small><div style="font-size:18px;font-weight:800">${rp(nw.kas)}</div></div><div><small style="color:#9FC2B3">Total aset</small><div style="font-size:18px;font-weight:800">${rp(nw.aset)}</div></div><div><small style="color:#9FC2B3">Total utang</small><div style="font-size:18px;font-weight:800">${rp(nw.ut)}</div></div></div></div></section>
-  ${notifCard()}${transisiCard()}${al.length ? `<section class="card" aria-label="Peringatan"><h2>Perlu perhatian</h2><div style="display:flex;flex-direction:column;gap:8px;margin-top:10px">${al.slice(0, 8).map(([k, t]) => `<div class="al ${k}">${t}</div>`).join('')}</div></section>` : ''}
+  ${backupCard()}${notifCard()}${transisiCard()}${al.length ? `<section class="card" aria-label="Peringatan"><h2>Perlu perhatian</h2><div style="display:flex;flex-direction:column;gap:8px;margin-top:10px">${al.slice(0, 8).map(([k, t]) => `<div class="al ${k}">${t}</div>`).join('')}</div></section>` : ''}
   <div class="kpis"><div class="kpi"><small>Pemasukan</small><b class="pos">${rp(ms.inc)}</b><em>${ms.n} transaksi</em></div><div class="kpi"><small>Pengeluaran</small><b class="neg">${rp(ms.exp)}</b><em>${ms.inc ? pct(ms.exp / ms.inc, 0) + ' dari pemasukan' : '-'}</em></div><div class="kpi"><small>Surplus / defisit</small><b class="${signc(ms.net)}">${rp(ms.net)}</b><em>Savings rate ${pct(sr, 0)}</em></div><div class="kpi"><small>Rasio cicilan</small><b>${pct(dsr, 0)}</b><em>Batas ${pct(S.set.dsr, 0)}</em></div><div class="kpi"><small>Dana darurat</small><b>${dd.toFixed(1).replace('.', ',')} bln</b><em>Ideal ${S.set.dd} bulan</em></div><div class="kpi"><small>Anggaran terpakai</small><b>${totB ? pct(totR / totB, 0) : '-'}</b><em>${rp(totR)} dari ${rp(totB)}</em></div></div>
   <div class="row"><section class="card"><h2>Pemasukan vs pengeluaran ${P.y}</h2><p class="sub">Per bulan</p>${barChart(BLS, inc, exp)}<div class="leg"><span><i style="background:#0B9E88"></i>Pemasukan</span><span><i style="background:#FF6F4D"></i>Pengeluaran</span></div></section>
   <section class="card"><h2>Pengeluaran per kategori</h2><p class="sub">${BLN[P.m - 1]} ${P.y}</p>${hbars(catExp, '#FF6F4D')}</section></div>
@@ -190,16 +190,21 @@ V.target = () => {
     const ok = !g.dl || (eta !== null && eta <= ml);
     return `<section class="card"><div style="display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap"><h2>${esc(g.n)}</h2><span class="tag ${p >= 1 ? 'g' : ok ? 'i' : 'w'}">${p >= 1 ? 'Tercapai' : ok ? 'Sesuai jalur' : 'Perlu ditambah'}</span></div>
     <div style="font-size:24px;font-weight:800;margin:8px 0;font-variant-numeric:tabular-nums">${rp(s)} <small class="sub">/ ${rp(g.goal)}</small></div>${bar(p, 2)}
-    <p class="sub">${pct(p, 0)} · sisa ${rp(left)}${g.dl ? ` · deadline ${fmtD(g.dl)} (${ml} bulan)` : ''}</p>
+    <p class="sub">${g.terpakai ? `Sudah terpakai sesuai tujuan ${rp(g.terpakai)} (target awal ${rp(g.goal + g.terpakai)}) · ` : ''}${pct(p, 0)} · sisa ${rp(left)}${g.dl ? ` · deadline ${fmtD(g.dl)} (${ml} bulan)` : ''}</p>
     <div style="margin-top:10px;font-size:13px;line-height:1.7">Aturan setor: <b>${g.mode === 'percent' ? pct(g.pct, 1) + ' dari penghasilan' : 'nominal tetap'}</b> = <b>${rp(rule)}</b>/bulan<br>${g.dl ? `Perlu setor agar tepat waktu: <b>${rp(need)}</b>/bulan<br>` : ''}${etaD ? `Perkiraan tercapai: <b>${BLN[etaD.getMonth()]} ${etaD.getFullYear()}</b> (${eta} bulan)` : 'Atur nilai setoran untuk melihat perkiraan'}</div>
     <div class="frm" style="margin-top:12px"><div class="fl" style="flex:1 1 130px"><label for="tm${i}">Cara setor</label><select id="tm${i}" data-c="tgmode" data-i="${i}">${opt([['percent', '% penghasilan'], ['fixed', 'Nominal tetap']], g.mode)}</select></div>
     <div class="fl" style="flex:1 1 110px"><label for="tv${i}">${g.mode === 'percent' ? 'Persen (%)' : 'Rp / bulan'}</label><input id="tv${i}" type="number" step="any" value="${g.mode === 'percent' ? +(g.pct * 100).toFixed(2) : g.monthly || 0}" data-c="tgval" data-i="${i}"></div>
     <div class="fl" style="flex:1 1 110px"><label for="tg${i}">Target (Rp)</label><input id="tg${i}" type="number" step="any" value="${g.goal}" data-c="tggoal" data-i="${i}"></div>
-    <button class="btn d s" data-a="deltarget" data-i="${i}">Hapus</button></div></section>`;
+    <button class="btn d s" data-a="deltarget" data-i="${i}">Hapus</button></div>
+    <details style="margin-top:12px"><summary style="cursor:pointer;font-weight:700;min-height:40px;display:flex;align-items:center">Pakai / ambil dana dari target ini</summary>
+    <form data-f="tgpakai" data-i="${i}" class="frm" style="margin-top:8px">${fld('Jumlah (Rp)', 'tp_a' + i, `<input id="tp_a${i}" name="a" type="number" step="any" inputmode="decimal" max="${s}" required>`)}${fld('Kategori pengeluaran', 'tp_c' + i, `<select id="tp_c${i}" name="c">${opt(S.alloc.map(a => a.n), '')}</select>`)}${fld('Catatan', 'tp_n' + i, `<input id="tp_n${i}" name="n" type="text" placeholder="mis. tiket pesawat">`)}
+    ${/darurat/i.test(g.n) ? '<p class="sub" style="flex:1 1 100%;margin:0">Dana darurat: jumlah target tidak berkurang dan target tidak pernah selesai, hanya saldonya yang turun. Isi ulang lewat setoran.</p>' : `<label class="ck" style="flex:1 1 100%;border:0;padding:4px 0"><input type="checkbox" name="s" checked><span><b>Sesuai tujuan target</b><br><small class="sub">Bila dicentang, jumlah target (Rp) ikut berkurang sebesar yang dipakai; jika saldo habis atau target jadi Rp0, target selesai dan pindah ke riwayat. Bila tidak dicentang, target tetap ada walau saldonya Rp0.</small></span></label>`}
+    <button class="btn s" type="submit">Catat pengeluaran dari target</button><button class="btn o s" type="button" data-a="tgfinish" data-i="${i}">Selesaikan target</button></form></details></section>`;
   }).join('');
   const dd = S.targets.filter(t => /darurat/i.test(t.n)), ddS = sum(dd, targetSaved), ae = avgExpense();
   return head('Target & Tabungan', 'Setiap target punya tujuan, batas waktu, dan aturan setor: nominal tetap atau % dari penghasilan') + `
   <div class="row">${cards || '<div class="card empty" style="flex:1">Belum ada target</div>'}</div>
+  ${(S.targetsDone || []).length ? `<section class="card"><h2>Target selesai</h2><p class="sub">Target yang dananya sudah dipakai sesuai tujuan. Riwayat setoran dan pengeluarannya tetap ada di Buku Transaksi.</p>${tbl(['Target', '>Target (Rp)', 'Selesai', ''], S.targetsDone.map((g, i) => `<tr><td>${esc(g.n)}</td><td class="r">${rp(g.goal)}</td><td>${fmtD(g.done)}</td><td><button class="btn o s" data-a="tgrestore" data-i="${i}">Aktifkan lagi</button> <button class="btn d s" data-a="tgdeldone" data-i="${i}">Hapus</button></td></tr>`))}</section>` : ''}
   <section class="card"><h2>Tambah target</h2><form data-f="target" class="frm" style="margin-top:12px">${fld('Nama tujuan', 't_n', inp('n', '', 'text', 'required placeholder="mis. Laptop, Umrah, DP rumah"'))}${fld('Prioritas', 't_p', `<select name="p" id="t_p">${opt(['Tinggi', 'Sedang', 'Rendah'], 'Sedang')}</select>`)}${fld('Jumlah target (Rp)', 't_g', num('g', '').replace('step="any"', 'step="any" required'))}${fld('Deadline', 't_d', inp('dl', '', 'date'))}${fld('Cara setor', 't_m', `<select name="mode" id="t_m"><option value="percent">% dari penghasilan bulanan</option><option value="fixed">Nominal tetap per bulan</option></select>`)}${fld('Persen (%) atau Rp/bulan', 't_v', num('v', '10'))}${fld('Saldo awal (Rp)', 't_s', num('s', '0'))}<button class="btn">Tambah target</button></form>
   <p class="sub">Setoran dicatat di Buku Transaksi dengan jenis <b>Setoran tabungan</b> dan Terkait = nama target (atau lewat Catat Cepat).</p></section>
   <div class="row"><section class="card"><h2>Alokasikan penghasilan bulan ini</h2><p class="sub">Catat setoran semua target sesuai aturannya sekaligus</p>${tbl(['Target', '>Setoran bulan ini'], S.targets.map(g => `<tr><td>${esc(g.n)}</td><td class="r">${rp(tgRule(g))}</td></tr>`), `<tr><td>Total</td><td class="r">${rp(sum(S.targets, tgRule))}</td></tr>`)}<button class="btn l" style="margin-top:12px" data-a="allocall">Catat semua setoran</button></section>
@@ -211,6 +216,28 @@ C.tgval = el => { const g = tg(el); const v = parseFloat(el.value) || 0; if (g.m
 C.tggoal = el => { tg(el).goal = parseFloat(el.value) || 0; save(); render(); };
 A.deltarget = b => { if (confirm('Hapus target ini? Setoran lama tetap ada di transaksi.')) { S.targets.splice(+b.dataset.i, 1); save(); render(); } };
 F.target = f => { const m = f.mode.value, v = parseFloat(f.v.value) || 0; S.targets.push({ n: f.n.value.trim(), pri: f.p.value, goal: +f.g.value || 0, dl: f.dl.value, awal: +f.s.value || 0, mode: m, pct: m === 'percent' ? v / 100 : 0, monthly: m === 'fixed' ? v : 0 }); save(); render(); };
+F.tgpakai = f => {
+  const g = S.targets[+f.dataset.i]; if (!g) return; const a = +f.a.value || 0, saved = targetSaved(g);
+  if (a <= 0) return toast('Isi jumlah');
+  if (a > saved) return toast('Saldo target hanya ' + rp(saved));
+  const dar = /darurat/i.test(g.n), tuj = !dar && !!f.s && f.s.checked;
+  addTx({ t: 'Pengeluaran dari target', c: f.c.value, amt: a, m: 'Dari target', ref: g.n, note: f.n.value.trim() || (dar ? 'Dipakai dari dana darurat' : tuj ? 'Sesuai tujuan' : 'Di luar tujuan'), tuj });
+  if (tuj) { g.goal = Math.max(0, (+g.goal || 0) - a); g.terpakai = (+g.terpakai || 0) + a; }
+  const left = targetSaved(g);
+  if (tuj && (left <= 0 || g.goal <= 0)) {
+    if (left > 0) addTx({ t: 'Penarikan tabungan', c: /darurat/i.test(g.n) ? 'Dana Darurat' : 'Tabungan Target', amt: left, m: 'Transfer Bank', ref: g.n, note: 'Tujuan tercapai, sisa dikembalikan ke kas' });
+    archiveTarget(+f.dataset.i); toast(`Target "${g.n}" selesai dan dipindah ke riwayat`);
+  } else { save(); render(); toast(targetSaved(g) <= 0 ? `Saldo "${g.n}" kini Rp0, target tetap ada` : 'Pengeluaran dari target dicatat'); }
+};
+function archiveTarget(i) { const g = S.targets.splice(i, 1)[0]; S.targetsDone = S.targetsDone || []; S.targetsDone.push(Object.assign({}, g, { done: today() })); save(); render(); }
+A.tgfinish = b => {
+  const g = tg(b), left = targetSaved(g);
+  if (!confirm(left > 0 ? `Selesaikan "${g.n}"? Sisa saldo ${rp(left)} dikembalikan ke kas lewat Penarikan tabungan.` : `Selesaikan "${g.n}" dan pindahkan ke riwayat?`)) return;
+  if (left > 0) addTx({ t: 'Penarikan tabungan', c: /darurat/i.test(g.n) ? 'Dana Darurat' : 'Tabungan Target', amt: left, m: 'Transfer Bank', ref: g.n, note: 'Target selesai, sisa dikembalikan ke kas' });
+  archiveTarget(+b.dataset.i); toast('Target selesai');
+};
+A.tgrestore = b => { const g = S.targetsDone.splice(+b.dataset.i, 1)[0]; delete g.done; S.targets.push(g); save(); render(); };
+A.tgdeldone = b => { if (confirm('Hapus dari riwayat target selesai?')) { S.targetsDone.splice(+b.dataset.i, 1); save(); render(); } };
 A.allocall = () => { const n = S.targets.filter(g => tgRule(g) > 0).length; if (!n || !confirm(`Catat ${n} setoran tabungan?`)) return; S.targets.forEach(g => { const v = tgRule(g); if (v > 0) addTx({ t: 'Setoran tabungan', c: /darurat/i.test(g.n) ? 'Dana Darurat' : 'Tabungan Target', amt: v, m: 'Transfer Bank', ref: g.n, note: 'Setoran bulanan' }); }); render(); toast('Setoran dicatat'); };
 
 /* ===== KEKAYAAN ===== */
@@ -324,8 +351,9 @@ V.rencana = () => {
     body = `<section class="card"><h2>Asuransi</h2>${tbl(['Polis', 'Jenis', '>Premi', 'Periode', 'Jatuh tempo', '>Setahun', ''], S.ins.map((x, i) => `<tr><td>${esc(x.n)}</td><td>${esc(x.jenis)}</td><td class="r">${rp(x.premi)}</td><td>${esc(x.per)}</td><td>${fmtD(x.due)}</td><td class="r">${rp(x.premi * ({ Bulanan: 12, Triwulan: 4, Semesteran: 2, Tahunan: 1 }[x.per] || 1))}</td><td><button class="btn d s" data-a="delins" data-i="${i}">Hapus</button></td></tr>`), `<tr><td colspan="5">Total premi setahun</td><td class="r">${rp(sum(S.ins, x => x.premi * ({ Bulanan: 12, Triwulan: 4, Semesteran: 2, Tahunan: 1 }[x.per] || 1)))}</td><td>${inc ? pct(sum(S.ins, x => x.premi * ({ Bulanan: 12, Triwulan: 4, Semesteran: 2, Tahunan: 1 }[x.per] || 1)) / inc, 1) + ' penghasilan' : ''}</td></tr>`)}
     <form data-f="ins" class="frm" style="margin-top:14px">${fld('Nama polis', 'n_n', inp('n', '', 'text', 'required'))}${fld('Jenis', 'n_j', `<select name="j" id="n_j">${opt(['Kesehatan', 'Jiwa', 'Kendaraan', 'Properti', 'BPJS', 'Lainnya'], 'Kesehatan')}</select>`)}${fld('Premi (Rp)', 'n_p', num('p', '').replace('step="any"', 'step="any" required'))}${fld('Periode', 'n_r', `<select name="per" id="n_r">${opt(['Bulanan', 'Triwulan', 'Semesteran', 'Tahunan'], 'Bulanan')}</select>`)}${fld('Jatuh tempo', 'n_d', inp('d', '', 'date'))}<button class="btn">Tambah</button></form><p class="sub">Acuan: total premi 5–10% dari penghasilan.</p></section>`;
   } else if (t === 'pajak') { body = pajakBody();
+  } else if (t === 'slip') { body = slipBody();
   } else { body = sptBody(); }
-  return head('Proyeksi, Zakat, Pajak, SPT', 'Perencanaan jangka panjang dan kewajiban zakat, pajak, serta pelaporan SPT') + tabs('rc', [['proyeksi', 'Proyeksi & FI'], ['zakat', 'Zakat'], ['pajak', 'Pajak'], ['spt', 'SPT'], ['asuransi', 'Asuransi']], 'proyeksi') + body;
+  return head('Proyeksi, Zakat, Pajak, SPT', 'Perencanaan jangka panjang dan kewajiban zakat, pajak, serta pelaporan SPT') + tabs('rc', [['proyeksi', 'Proyeksi & FI'], ['zakat', 'Zakat'], ['pajak', 'Pajak'], ['slip', 'Cek Slip Gaji'], ['spt', 'SPT'], ['asuransi', 'Asuransi']], 'proyeksi') + body;
 };
 C.gold = el => { S.set.gold = +el.value || 0; save(); render(); };
 F.ins = f => { S.ins.push({ n: f.n.value.trim(), jenis: f.j.value, premi: +f.p.value || 0, per: f.per.value, due: f.d.value }); save(); render(); };
